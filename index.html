@@ -365,7 +365,9 @@
     let analyser = null;
     let micSource = null;
     let audioEnabled = false;
-    let prevWhistle = [false, false];
+    let whistleFrames = 0;
+    let silenceFrames = 0;
+    let whistleLatched = false;
     let lastToggleAt = 0;
 
     async function startMicrophone(isAutoPrompt = false) {
@@ -428,14 +430,27 @@
       const loudEnough = maxValue > 90 && mean > 8;
       const whistleNow = loudEnough && peakRatio > 4.2;
 
-      const now = performance.now();
-      if (!prevWhistle[0] && !prevWhistle[1] && whistleNow && now - lastToggleAt > 350) {
-        ship.toggleWhistleForce();
-        lastToggleAt = now;
+      // Require short stability windows to avoid one-frame false positives.
+      if (whistleNow) {
+        whistleFrames += 1;
+        silenceFrames = 0;
+      } else {
+        silenceFrames += 1;
+        whistleFrames = 0;
       }
 
-      prevWhistle[0] = prevWhistle[1];
-      prevWhistle[1] = whistleNow;
+      // Release the latch only after a few silent frames to debounce.
+      if (silenceFrames >= 4) {
+        whistleLatched = false;
+      }
+
+      const now = performance.now();
+      const hasStableWhistle = whistleFrames >= 2;
+      if (!whistleLatched && hasStableWhistle && now - lastToggleAt > 350) {
+        ship.toggleWhistleForce();
+        whistleLatched = true;
+        lastToggleAt = now;
+      }
 
       requestAnimationFrame(detectWhistle);
     }
