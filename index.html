@@ -90,7 +90,7 @@
 
     class Obstacle {
       constructor(startX) {
-        this.width = randomInt(46, 68);
+        this.width = randomInt(28, 42);
         this.height = randomInt(40, 78);
         this.speed = 255;
         this.reset(startX);
@@ -102,7 +102,7 @@
 
       reset(newX) {
         this.x = newX;
-        this.width = randomInt(46, 68);
+        this.width = randomInt(28, 42);
         this.height = randomInt(40, 78);
       }
 
