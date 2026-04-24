@@ -411,6 +411,7 @@
       const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
 
       let maxValue = 0;
+      let maxBin = startBin;
       let sum = 0;
       const values = [];
 
@@ -418,7 +419,10 @@
         const value = bins[i];
         values.push(value);
         sum += value;
-        if (value > maxValue) maxValue = value;
+        if (value > maxValue) {
+          maxValue = value;
+          maxBin = i;
+        }
       }
 
       values.sort((a, b) => a - b);
@@ -428,7 +432,28 @@
       // Similar spirit to max / median threshold in the Python version.
       const peakRatio = maxValue / Math.max(median, 1);
       const loudEnough = maxValue > 90 && mean > 8;
-      const whistleNow = loudEnough && peakRatio > 4.2;
+
+      // Estimate how narrow the peak is around the max bin.
+      // Whistles tend to create a very narrow, tone-like ridge.
+      const widthThreshold = maxValue * 0.6;
+      let left = maxBin;
+      while (left > startBin && bins[left - 1] >= widthThreshold) {
+        left -= 1;
+      }
+      let right = maxBin;
+      while (right < endBin && bins[right + 1] >= widthThreshold) {
+        right += 1;
+      }
+      const peakWidthBins = right - left + 1;
+      const narrowEnough = peakWidthBins <= 5;
+
+      // Ensure the center bin is significantly above nearby shoulders.
+      const shoulderLeft = bins[Math.max(startBin, maxBin - 6)];
+      const shoulderRight = bins[Math.min(endBin, maxBin + 6)];
+      const shoulderMean = (shoulderLeft + shoulderRight) / 2;
+      const isolatedPeak = maxValue / Math.max(shoulderMean, 1) > 1.8;
+
+      const whistleNow = loudEnough && peakRatio > 4.2 && narrowEnough && isolatedPeak;
 
       // Require short stability windows to avoid one-frame false positives.
       if (whistleNow) {
