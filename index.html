@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Whistle Gate Game</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #111;
+      color: white;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: grid;
+      place-items: center;
+    }
+
+    .wrap {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+    }
+
+    canvas {
+      background: #000;
+      border: 2px solid #333;
+      image-rendering: crisp-edges;
+    }
+
+    .hud {
+      width: 800px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: #ddd;
+    }
+
+    button {
+      cursor: pointer;
+      border: 0;
+      border-radius: 10px;
+      padding: 8px 14px;
+      background: #f5d742;
+      color: #111;
+      font-weight: 700;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .hint {
+      max-width: 800px;
+      font-size: 13px;
+      color: #aaa;
+      text-align: center;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hud">
+      <div id="status">Click “Start microphone” to enable whistle control.</div>
+      <button id="micButton">Start microphone</button>
+    </div>
+
+    <canvas id="game" width="800" height="620"></canvas>
+
+    <div class="hint">
+      Whistle or press <strong>Space/Arrow Up</strong> to toggle vertical direction.
+      Use <strong>Left</strong> and <strong>Right</strong> to move horizontally.
+      Press <strong>R</strong> after a crash to restart.
+    </div>
+  </div>
+
+  <script>
+    "use strict";
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+    const micButton = document.getElementById("micButton");
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    class Gate {
+      constructor(startX, startGapY) {
+        this.x = startX;
+        this.y = 0;
+        this.width = 50;
+        this.gap = 250;
+        this.openingY = startGapY;
+        this.speed = -60; // pixels per second, equivalent to roughly -1 px/frame at 60 FPS
+      }
+
+      move(dt) {
+        this.x += this.speed * dt;
+      }
+
+      reset(newX) {
+        this.x = newX;
+        this.openingY = randomInt(50, 200);
+      }
+
+      draw(ctx) {
+        ctx.fillStyle = "rgb(255, 255, 0)";
+        ctx.fillRect(this.x, 0, this.width, this.openingY);
+        ctx.fillRect(
+          this.x,
+          this.openingY + this.gap,
+          this.width,
+          HEIGHT - this.openingY - this.gap
+        );
+      }
+
+      collidesWith(ship) {
+        const shipBox = ship.bounds();
+
+        const topGate = {
+          x: this.x,
+          y: 0,
+          w: this.width,
+          h: this.openingY,
+        };
+
+        const bottomGate = {
+          x: this.x,
+          y: this.openingY + this.gap,
+          w: this.width,
+          h: HEIGHT - this.openingY - this.gap,
+        };
+
+        return rectsOverlap(shipBox, topGate) || rectsOverlap(shipBox, bottomGate);
+      }
+    }
+
+    class Ship {
+      constructor() {
+        this.width = 48;
+        this.height = 32;
+        this.x = 300;
+        this.y = 100;
+        this.vx = 0;
+        this.vy = 0;
+        this.fx = 0.99;
+        this.fy = 0.8;
+        this.whistleForce = false;
+        this.addSpeedX = 1.5;
+        this.addSpeedYUp = 100;
+        this.addSpeedYDown = 170;
+      }
+
+      whistleUp() {
+        this.whistleForce = true;
+      }
+
+      whistleDown() {
+        this.whistleForce = false;
+      }
+
+      toggleWhistleForce() {
+        this.whistleForce = !this.whistleForce;
+      }
+
+      moveRight() {
+        this.vx += this.addSpeedX * 60;
+      }
+
+      moveLeft() {
+        this.vx -= this.addSpeedX * 60;
+      }
+
+      update(dt) {
+        // The original pygame version flips between upward and downward motion
+        // based on whistle state rather than using continuous gravity.
+        this.vy = this.whistleForce ? this.addSpeedYDown : -this.addSpeedYUp;
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        if (this.y < 0) {
+          this.y = 0;
+          this.vy = Math.abs(this.vy) * this.fy;
+        }
+
+        if (this.y + this.height > HEIGHT) {
+          this.y = HEIGHT - this.height;
+          this.vy = -Math.abs(this.vy) * this.fy;
+          this.vx *= this.fx;
+        }
+
+        if (this.x < 0) {
+          this.x = 0;
+          this.vx = -this.vx * this.fx;
+        }
+
+        if (this.x + this.width > WIDTH) {
+          this.x = WIDTH - this.width;
+          this.vx = -this.vx * this.fx;
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+        // Simple canvas replacement for spaceship.png.
+        ctx.fillStyle = "#7dd3fc";
+        ctx.beginPath();
+        ctx.moveTo(this.width / 2, 0);
+        ctx.lineTo(-this.width / 2, -this.height / 2);
+        ctx.lineTo(-this.width / 3, 0);
+        ctx.lineTo(-this.width / 2, this.height / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = "#e0f2fe";
+        ctx.beginPath();
+        ctx.arc(5, -3, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#f97316";
+        ctx.beginPath();
+        ctx.moveTo(-this.width / 2, -7);
+        ctx.lineTo(-this.width / 2 - 14, 0);
+        ctx.lineTo(-this.width / 2, 7);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      bounds() {
+        // Slightly smaller than the visual ship to feel fair.
+        return {
+          x: this.x + 4,
+          y: this.y + 4,
+          w: this.width - 8,
+          h: this.height - 8,
+        };
+      }
+    }
+
+    function rectsOverlap(a, b) {
+      return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+      );
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    let ship;
+    let gates;
+    let crashed;
+    let score;
+    let lastTime;
+    let animationId;
+
+    function resetGame() {
+      ship = new Ship();
+      gates = [
+        new Gate(800, 150),
+        new Gate(1100, 50),
+        new Gate(1400, 250),
+        new Gate(1700, 200),
+      ];
+      crashed = false;
+      score = 0;
+      lastTime = performance.now();
+      cancelAnimationFrame(animationId);
+      animationId = requestAnimationFrame(loop);
+    }
+
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.033);
+      lastTime = now;
+
+      if (!crashed) {
+        ship.update(dt);
+
+        for (const gate of gates) {
+          gate.move(dt);
+        }
+
+        const maxX = Math.max(...gates.map((g) => g.x));
+        for (const gate of gates) {
+          if (gate.x < -100) {
+            gate.reset(maxX + 300);
+            score += 1;
+          }
+        }
+
+        for (const gate of gates) {
+          if (gate.collidesWith(ship)) {
+            crashed = true;
+            statusEl.textContent = "Crashed! Press R to restart.";
+            break;
+          }
+        }
+      }
+
+      draw();
+      animationId = requestAnimationFrame(loop);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      for (const gate of gates) {
+        gate.draw(ctx);
+      }
+
+      ship.draw(ctx);
+
+      ctx.fillStyle = "white";
+      ctx.font = "18px system-ui, sans-serif";
+      ctx.fillText(`Score: ${score}`, 16, 28);
+
+      ctx.font = "14px system-ui, sans-serif";
+      ctx.fillText(`Whistle force: ${ship.whistleForce ? "down" : "up"}`, 16, 50);
+
+      if (crashed) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.fillStyle = "white";
+        ctx.font = "700 44px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Game Over", WIDTH / 2, HEIGHT / 2 - 20);
+        ctx.font = "20px system-ui, sans-serif";
+        ctx.fillText("Press R to restart", WIDTH / 2, HEIGHT / 2 + 22);
+        ctx.textAlign = "left";
+      }
+    }
+
+    window.addEventListener("keydown", (event) => {
+      if (event.code === "ArrowRight") {
+        ship.moveRight();
+      } else if (event.code === "ArrowLeft") {
+        ship.moveLeft();
+      } else if (event.code === "ArrowUp" || event.code === "Space") {
+        ship.toggleWhistleForce();
+        event.preventDefault();
+      } else if (event.code === "KeyR") {
+        resetGame();
+        statusEl.textContent = audioEnabled
+          ? "Microphone enabled. Whistle to toggle direction."
+          : "Click “Start microphone” to enable whistle control.";
+      }
+    });
+
+    // Browser microphone version of the pygame/pyaudio whistle detector.
+    // It looks for a strong, narrow frequency peak in the high-frequency range.
+    let audioContext = null;
+    let analyser = null;
+    let micSource = null;
+    let audioEnabled = false;
+    let prevWhistle = [false, false];
+    let lastToggleAt = 0;
+
+    async function startMicrophone() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new AudioContext();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 4096;
+        analyser.smoothingTimeConstant = 0.25;
+
+        micSource = audioContext.createMediaStreamSource(stream);
+        micSource.connect(analyser);
+
+        audioEnabled = true;
+        micButton.disabled = true;
+        statusEl.textContent = "Microphone enabled. Whistle to toggle direction.";
+        detectWhistle();
+      } catch (error) {
+        statusEl.textContent = "Could not access microphone. Keyboard controls still work.";
+        console.error(error);
+      }
+    }
+
+    function detectWhistle() {
+      if (!analyser || crashed) {
+        requestAnimationFrame(detectWhistle);
+        return;
+      }
+
+      const bins = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(bins);
+
+      const sampleRate = audioContext.sampleRate;
+      const hzPerBin = sampleRate / analyser.fftSize;
+
+      // Whistles are often somewhere around 1.8 kHz to 5 kHz.
+      const startBin = Math.max(1, Math.floor(1800 / hzPerBin));
+      const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
+
+      let maxValue = 0;
+      let sum = 0;
+      const values = [];
+
+      for (let i = startBin; i <= endBin; i++) {
+        const value = bins[i];
+        values.push(value);
+        sum += value;
+        if (value > maxValue) maxValue = value;
+      }
+
+      values.sort((a, b) => a - b);
+      const median = values[Math.floor(values.length / 2)] || 1;
+      const mean = sum / Math.max(values.length, 1);
+
+      // Similar spirit to max / median threshold in the Python version.
+      const peakRatio = maxValue / Math.max(median, 1);
+      const loudEnough = maxValue > 90 && mean > 8;
+      const whistleNow = loudEnough && peakRatio > 4.2;
+
+      const now = performance.now();
+      if (!prevWhistle[0] && !prevWhistle[1] && whistleNow && now - lastToggleAt > 350) {
+        ship.toggleWhistleForce();
+        lastToggleAt = now;
+      }
+
+      prevWhistle[0] = prevWhistle[1];
+      prevWhistle[1] = whistleNow;
+
+      requestAnimationFrame(detectWhistle);
+    }
+
+    micButton.addEventListener("click", startMicrophone);
+
+    resetGame();
+  </script>
+</body>
+</html>
+
