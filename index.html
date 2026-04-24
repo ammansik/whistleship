@@ -63,7 +63,7 @@
 <body>
   <div class="wrap">
     <div class="hud">
-      <div id="status">Click “Start microphone” to enable whistle control.</div>
+      <div id="status">Requesting microphone access…</div>
       <button id="micButton">Start microphone</button>
     </div>
 
@@ -368,7 +368,7 @@
     let prevWhistle = [false, false];
     let lastToggleAt = 0;
 
-    async function startMicrophone() {
+    async function startMicrophone(isAutoPrompt = false) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioContext = new AudioContext();
@@ -381,10 +381,13 @@
 
         audioEnabled = true;
         micButton.disabled = true;
+        micButton.textContent = "Microphone enabled";
         statusEl.textContent = "Microphone enabled. Whistle to toggle direction.";
         detectWhistle();
       } catch (error) {
-        statusEl.textContent = "Could not access microphone. Keyboard controls still work.";
+        statusEl.textContent = isAutoPrompt
+          ? "Microphone permission is required. Click “Start microphone” to allow it."
+          : "Could not access microphone. Please allow mic access and try again.";
         console.error(error);
       }
     }
@@ -440,7 +443,7 @@
     micButton.addEventListener("click", startMicrophone);
 
     resetGame();
+    startMicrophone(true);
   </script>
 </body>
 </html>
-
