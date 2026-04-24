@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Whistle Gate Game</title>
+  <title>Whistle Jump Game</title>
   <style>
     html, body {
       margin: 0;
@@ -70,8 +70,7 @@
     <canvas id="game" width="800" height="620"></canvas>
 
     <div class="hint">
-      Whistle or press <strong>Space/Arrow Up</strong> to toggle vertical direction.
-      Use <strong>Left</strong> and <strong>Right</strong> to move horizontally.
+      Whistle or press <strong>Space/Arrow Up</strong> to jump over incoming obstacles.
       Press <strong>R</strong> after a crash to restart.
     </div>
   </div>
@@ -86,161 +85,107 @@
 
     const WIDTH = canvas.width;
     const HEIGHT = canvas.height;
+    const GROUND_HEIGHT = 110;
+    const GRAVITY = 1750;
 
-    class Gate {
-      constructor(startX, startGapY) {
-        this.x = startX;
-        this.y = 0;
-        this.width = 50;
-        this.gap = 250;
-        this.openingY = startGapY;
-        this.speed = -60; // pixels per second, equivalent to roughly -1 px/frame at 60 FPS
+    class Obstacle {
+      constructor(startX) {
+        this.width = randomInt(18, 30);
+        this.height = randomInt(40, 78);
+        this.speed = 255;
+        this.reset(startX);
       }
 
       move(dt) {
-        this.x += this.speed * dt;
+        this.x -= this.speed * dt;
       }
 
       reset(newX) {
         this.x = newX;
-        this.openingY = randomInt(50, 200);
+        this.width = randomInt(18, 30);
+        this.height = randomInt(40, 78);
       }
 
       draw(ctx) {
-        ctx.fillStyle = "rgb(255, 255, 0)";
-        ctx.fillRect(this.x, 0, this.width, this.openingY);
-        ctx.fillRect(
-          this.x,
-          this.openingY + this.gap,
-          this.width,
-          HEIGHT - this.openingY - this.gap
-        );
+        const y = HEIGHT - GROUND_HEIGHT - this.height;
+
+        ctx.fillStyle = "#facc15";
+        ctx.fillRect(this.x, y, this.width, this.height);
+
+        ctx.fillStyle = "#fef08a";
+        ctx.fillRect(this.x + 6, y + 8, this.width - 12, 10);
       }
 
-      collidesWith(ship) {
-        const shipBox = ship.bounds();
-
-        const topGate = {
+      bounds() {
+        return {
           x: this.x,
-          y: 0,
+          y: HEIGHT - GROUND_HEIGHT - this.height,
           w: this.width,
-          h: this.openingY,
+          h: this.height,
         };
-
-        const bottomGate = {
-          x: this.x,
-          y: this.openingY + this.gap,
-          w: this.width,
-          h: HEIGHT - this.openingY - this.gap,
-        };
-
-        return rectsOverlap(shipBox, topGate) || rectsOverlap(shipBox, bottomGate);
       }
     }
 
-    class Ship {
+    class Runner {
       constructor() {
-        this.width = 48;
-        this.height = 32;
-        this.x = 300;
-        this.y = 100;
-        this.vx = 0;
+        this.width = 44;
+        this.height = 48;
+        this.x = 130;
+        this.y = HEIGHT - GROUND_HEIGHT - this.height;
         this.vy = 0;
-        this.fx = 0.99;
-        this.fy = 0.8;
-        this.whistleForce = false;
-        this.addSpeedX = 1.5;
-        this.addSpeedYUp = 100;
-        this.addSpeedYDown = 170;
+        this.jumpVelocity = -680;
       }
 
-      whistleUp() {
-        this.whistleForce = true;
+      jump() {
+        if (this.onGround()) {
+          this.vy = this.jumpVelocity;
+        }
       }
 
-      whistleDown() {
-        this.whistleForce = false;
-      }
-
-      toggleWhistleForce() {
-        this.whistleForce = !this.whistleForce;
-      }
-
-      moveRight() {
-        this.vx += this.addSpeedX * 60;
-      }
-
-      moveLeft() {
-        this.vx -= this.addSpeedX * 60;
+      onGround() {
+        return this.y >= HEIGHT - GROUND_HEIGHT - this.height - 0.5;
       }
 
       update(dt) {
-        // The original pygame version flips between upward and downward motion
-        // based on whistle state rather than using continuous gravity.
-        this.vy = this.whistleForce ? this.addSpeedYDown : -this.addSpeedYUp;
-
-        this.x += this.vx * dt;
+        this.vy += GRAVITY * dt;
         this.y += this.vy * dt;
 
-        if (this.y < 0) {
-          this.y = 0;
-          this.vy = Math.abs(this.vy) * this.fy;
-        }
-
-        if (this.y + this.height > HEIGHT) {
-          this.y = HEIGHT - this.height;
-          this.vy = -Math.abs(this.vy) * this.fy;
-          this.vx *= this.fx;
-        }
-
-        if (this.x < 0) {
-          this.x = 0;
-          this.vx = -this.vx * this.fx;
-        }
-
-        if (this.x + this.width > WIDTH) {
-          this.x = WIDTH - this.width;
-          this.vx = -this.vx * this.fx;
+        const groundY = HEIGHT - GROUND_HEIGHT - this.height;
+        if (this.y > groundY) {
+          this.y = groundY;
+          this.vy = 0;
         }
       }
 
       draw(ctx) {
+        const centerX = this.x + this.width / 2;
+        const centerY = this.y + this.height / 2;
+
         ctx.save();
-        ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+        ctx.translate(centerX, centerY);
 
-        // Simple canvas replacement for spaceship.png.
+        // Body
         ctx.fillStyle = "#7dd3fc";
-        ctx.beginPath();
-        ctx.moveTo(this.width / 2, 0);
-        ctx.lineTo(-this.width / 2, -this.height / 2);
-        ctx.lineTo(-this.width / 3, 0);
-        ctx.lineTo(-this.width / 2, this.height / 2);
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
+        // Face visor
         ctx.fillStyle = "#e0f2fe";
-        ctx.beginPath();
-        ctx.arc(5, -3, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(4, -13, 13, 12);
 
+        // Legs
         ctx.fillStyle = "#f97316";
-        ctx.beginPath();
-        ctx.moveTo(-this.width / 2, -7);
-        ctx.lineTo(-this.width / 2 - 14, 0);
-        ctx.lineTo(-this.width / 2, 7);
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(-14, this.height / 2 - 8, 10, 8);
+        ctx.fillRect(4, this.height / 2 - 8, 10, 8);
 
         ctx.restore();
       }
 
       bounds() {
-        // Slightly smaller than the visual ship to feel fair.
         return {
           x: this.x + 4,
-          y: this.y + 4,
+          y: this.y + 3,
           w: this.width - 8,
-          h: this.height - 8,
+          h: this.height - 3,
         };
       }
     }
@@ -258,20 +203,19 @@
       return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    let ship;
-    let gates;
+    let player;
+    let obstacles;
     let crashed;
     let score;
     let lastTime;
     let animationId;
 
     function resetGame() {
-      ship = new Ship();
-      gates = [
-        new Gate(800, 150),
-        new Gate(1100, 50),
-        new Gate(1400, 250),
-        new Gate(1700, 200),
+      player = new Runner();
+      obstacles = [
+        new Obstacle(860),
+        new Obstacle(1190),
+        new Obstacle(1520),
       ];
       crashed = false;
       score = 0;
@@ -280,30 +224,31 @@
       animationId = requestAnimationFrame(loop);
     }
 
+    function triggerJump() {
+      if (!crashed) {
+        player.jump();
+      }
+    }
+
     function loop(now) {
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
       if (!crashed) {
-        ship.update(dt);
+        player.update(dt);
 
-        for (const gate of gates) {
-          gate.move(dt);
-        }
+        const farthestX = Math.max(...obstacles.map((obstacle) => obstacle.x));
+        for (const obstacle of obstacles) {
+          obstacle.move(dt);
 
-        const maxX = Math.max(...gates.map((g) => g.x));
-        for (const gate of gates) {
-          if (gate.x < -100) {
-            gate.reset(maxX + 300);
+          if (obstacle.x + obstacle.width < 0) {
+            obstacle.reset(farthestX + randomInt(250, 360));
             score += 1;
           }
-        }
 
-        for (const gate of gates) {
-          if (gate.collidesWith(ship)) {
+          if (rectsOverlap(player.bounds(), obstacle.bounds())) {
             crashed = true;
             statusEl.textContent = "Crashed! Press R to restart.";
-            break;
           }
         }
       }
@@ -312,23 +257,35 @@
       animationId = requestAnimationFrame(loop);
     }
 
+    function drawGround() {
+      const y = HEIGHT - GROUND_HEIGHT;
+      ctx.fillStyle = "#1f2937";
+      ctx.fillRect(0, y, WIDTH, GROUND_HEIGHT);
+
+      ctx.strokeStyle = "#60a5fa";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y + 1);
+      ctx.lineTo(WIDTH, y + 1);
+      ctx.stroke();
+    }
+
     function draw() {
       ctx.clearRect(0, 0, WIDTH, HEIGHT);
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      for (const gate of gates) {
-        gate.draw(ctx);
+      drawGround();
+
+      for (const obstacle of obstacles) {
+        obstacle.draw(ctx);
       }
 
-      ship.draw(ctx);
+      player.draw(ctx);
 
       ctx.fillStyle = "white";
       ctx.font = "18px system-ui, sans-serif";
       ctx.fillText(`Score: ${score}`, 16, 28);
-
-      ctx.font = "14px system-ui, sans-serif";
-      ctx.fillText(`Whistle force: ${ship.whistleForce ? "down" : "up"}`, 16, 50);
 
       if (crashed) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
@@ -344,23 +301,18 @@
     }
 
     window.addEventListener("keydown", (event) => {
-      if (event.code === "ArrowRight") {
-        ship.moveRight();
-      } else if (event.code === "ArrowLeft") {
-        ship.moveLeft();
-      } else if (event.code === "ArrowUp" || event.code === "Space") {
-        ship.toggleWhistleForce();
+      if (event.code === "ArrowUp" || event.code === "Space") {
+        triggerJump();
         event.preventDefault();
       } else if (event.code === "KeyR") {
         resetGame();
         statusEl.textContent = audioEnabled
-          ? "Microphone enabled. Whistle to toggle direction."
+          ? "Microphone enabled. Whistle to jump."
           : "Click “Start microphone” to enable whistle control.";
       }
     });
 
-    // Browser microphone version of the pygame/pyaudio whistle detector.
-    // It looks for a strong, narrow frequency peak in the high-frequency range.
+    // Browser microphone whistle detector.
     let audioContext = null;
     let analyser = null;
     let micSource = null;
@@ -368,7 +320,7 @@
     let whistleFrames = 0;
     let silenceFrames = 0;
     let whistleLatched = false;
-    let lastToggleAt = 0;
+    let lastJumpAt = 0;
 
     async function startMicrophone(isAutoPrompt = false) {
       try {
@@ -384,7 +336,7 @@
         audioEnabled = true;
         micButton.disabled = true;
         micButton.textContent = "Microphone enabled";
-        statusEl.textContent = "Microphone enabled. Whistle to toggle direction.";
+        statusEl.textContent = "Microphone enabled. Whistle to jump.";
         detectWhistle();
       } catch (error) {
         statusEl.textContent = isAutoPrompt
@@ -406,7 +358,6 @@
       const sampleRate = audioContext.sampleRate;
       const hzPerBin = sampleRate / analyser.fftSize;
 
-      // Whistles are often somewhere around 1.8 kHz to 5 kHz.
       const startBin = Math.max(1, Math.floor(1800 / hzPerBin));
       const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
 
@@ -425,12 +376,10 @@
       const median = values[Math.floor(values.length / 2)] || 1;
       const mean = sum / Math.max(values.length, 1);
 
-      // Similar spirit to max / median threshold in the Python version.
       const peakRatio = maxValue / Math.max(median, 1);
       const loudEnough = maxValue > 90 && mean > 8;
       const whistleNow = loudEnough && peakRatio > 4.2;
 
-      // Require short stability windows to avoid one-frame false positives.
       if (whistleNow) {
         whistleFrames += 1;
         silenceFrames = 0;
@@ -439,17 +388,16 @@
         whistleFrames = 0;
       }
 
-      // Release the latch only after a few silent frames to debounce.
       if (silenceFrames >= 4) {
         whistleLatched = false;
       }
 
       const now = performance.now();
       const hasStableWhistle = whistleFrames >= 2;
-      if (!whistleLatched && hasStableWhistle && now - lastToggleAt > 350) {
-        ship.toggleWhistleForce();
+      if (!whistleLatched && hasStableWhistle && now - lastJumpAt > 220) {
+        triggerJump();
         whistleLatched = true;
-        lastToggleAt = now;
+        lastJumpAt = now;
       }
 
       requestAnimationFrame(detectWhistle);
