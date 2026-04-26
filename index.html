@@ -219,6 +219,7 @@
       ];
       crashed = false;
       score = 0;
+      whistleAmplitude = 0;
       lastTime = performance.now();
       cancelAnimationFrame(animationId);
       animationId = requestAnimationFrame(loop);
@@ -286,6 +287,7 @@
       ctx.fillStyle = "white";
       ctx.font = "18px system-ui, sans-serif";
       ctx.fillText(`Score: ${score}`, 16, 28);
+      drawWhistleMeter();
 
       if (crashed) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
@@ -298,6 +300,36 @@
         ctx.fillText("Press R to restart", WIDTH / 2, HEIGHT / 2 + 22);
         ctx.textAlign = "left";
       }
+    }
+
+    function drawWhistleMeter() {
+      const meterWidth = 18;
+      const meterHeight = 220;
+      const meterX = WIDTH - meterWidth - 20;
+      const meterY = 24;
+      const fillHeight = meterHeight * whistleAmplitude;
+
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+
+      const gradient = ctx.createLinearGradient(0, meterY + meterHeight, 0, meterY);
+      gradient.addColorStop(0, "#22d3ee");
+      gradient.addColorStop(0.5, "#facc15");
+      gradient.addColorStop(1, "#ef4444");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(meterX, meterY + meterHeight - fillHeight, meterWidth, fillHeight);
+
+      ctx.save();
+      ctx.translate(meterX + meterWidth + 16, meterY + meterHeight / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("WHISTLE", 0, 0);
+      ctx.restore();
     }
 
     window.addEventListener("keydown", (event) => {
@@ -321,6 +353,7 @@
     let silenceFrames = 0;
     let whistleLatched = false;
     let lastJumpAt = 0;
+    let whistleAmplitude = 0;
 
     async function startMicrophone(isAutoPrompt = false) {
       try {
@@ -379,6 +412,8 @@
       const peakRatio = maxValue / Math.max(median, 1);
       const loudEnough = maxValue > 90 && mean > 8;
       const whistleNow = loudEnough && peakRatio > 4.2;
+      const normalizedAmplitude = Math.min(1, maxValue / 255);
+      whistleAmplitude = whistleAmplitude * 0.8 + normalizedAmplitude * 0.2;
 
       if (whistleNow) {
         whistleFrames += 1;
