@@ -431,18 +431,19 @@
       const spectralFlatness = geometricMean / Math.max(mean, 1);
       const whistleBandRatio = sum / Math.max(lowBandSum, 1);
 
-      rollingNoiseMedian = rollingNoiseMedian * 0.97 + median * 0.03;
-      rollingNoiseMax = rollingNoiseMax * 0.97 + maxValue * 0.03;
-      rollingNoiseMean = rollingNoiseMean * 0.97 + mean * 0.03;
+      const clampedMaxForNoise = Math.min(maxValue, rollingNoiseMax * 1.08 + 4);
+      rollingNoiseMedian = rollingNoiseMedian * 0.98 + median * 0.02;
+      rollingNoiseMax = rollingNoiseMax * 0.98 + clampedMaxForNoise * 0.02;
+      rollingNoiseMean = rollingNoiseMean * 0.98 + mean * 0.02;
 
       const peakRatio = maxValue / Math.max(median, 1);
-      const dynamicAmpThreshold = Math.max(75, rollingNoiseMax * 1.7);
-      const dynamicMeanThreshold = Math.max(7, rollingNoiseMean * 1.5);
-      const dynamicRatioThreshold = Math.max(3.6, rollingNoiseMedian > 0 ? 4.0 : 3.6);
-      const dynamicBandRatio = Math.max(2.0, rollingNoiseMean > 10 ? 2.6 : 2.2);
-      const peakStable = lastPeakHz === 0 || Math.abs(peakHz - lastPeakHz) < 260;
-      const whistlePitch = peakHz >= 2200 && peakHz <= 4200;
-      const tonalEnough = spectralFlatness < 0.66;
+      const dynamicAmpThreshold = Math.max(60, rollingNoiseMax * 1.35);
+      const dynamicMeanThreshold = Math.max(5, rollingNoiseMean * 1.25);
+      const dynamicRatioThreshold = Math.max(3.0, rollingNoiseMedian > 0 ? 3.2 : 3.0);
+      const dynamicBandRatio = Math.max(1.6, rollingNoiseMean > 10 ? 2.0 : 1.8);
+      const peakStable = lastPeakHz === 0 || Math.abs(peakHz - lastPeakHz) < 420;
+      const whistlePitch = peakHz >= 1900 && peakHz <= 4500;
+      const tonalEnough = spectralFlatness < 0.8;
       const bandDominant = whistleBandRatio > dynamicBandRatio;
       const loudEnough = maxValue > dynamicAmpThreshold && mean > dynamicMeanThreshold;
       const whistleNow =
@@ -464,12 +465,12 @@
         whistleFrames = 0;
       }
 
-      if (silenceFrames >= 5 || maxValue < dynamicAmpThreshold * 0.55) {
+      if (silenceFrames >= 4 || maxValue < dynamicAmpThreshold * 0.5) {
         whistleLatched = false;
       }
 
       const now = performance.now();
-      const hasStableWhistle = whistleFrames >= 3;
+      const hasStableWhistle = whistleFrames >= 2;
       if (!whistleLatched && hasStableWhistle && now - lastJumpAt > 220) {
         triggerJump();
         whistleLatched = true;
