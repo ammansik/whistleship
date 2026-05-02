@@ -288,6 +288,7 @@
       ctx.font = "18px system-ui, sans-serif";
       ctx.fillText(`Score: ${score}`, 16, 28);
       drawWhistleMeter();
+      drawSpectrogram();
 
       if (crashed) {
         ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
@@ -332,6 +333,47 @@
       ctx.restore();
     }
 
+
+    function drawSpectrogram() {
+      const panelX = 520;
+      const panelY = 24;
+      const panelWidth = 250;
+      const panelHeight = 120;
+
+      ctx.fillStyle = "#020617";
+      ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+      if (spectrogramValues.length > 0) {
+        const barWidth = panelWidth / spectrogramValues.length;
+        for (let i = 0; i < spectrogramValues.length; i++) {
+          const value = spectrogramValues[i];
+          const barHeight = (value / 255) * (panelHeight - 22);
+          const x = panelX + i * barWidth;
+          const y = panelY + panelHeight - barHeight;
+
+          const hue = 220 - Math.min(170, value * 0.65);
+          ctx.fillStyle = `hsl(${hue} 90% 60%)`;
+          ctx.fillRect(x, y, Math.max(1, barWidth), barHeight);
+        }
+      }
+
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText("1kHz", panelX + 6, panelY + panelHeight - 6);
+      ctx.fillText("5kHz", panelX + panelWidth - 34, panelY + panelHeight - 6);
+      ctx.fillText(`Peak ${Math.round(spectrogramPeakHz)}Hz`, panelX + 72, panelY + 14);
+
+      ctx.fillStyle = "#93c5fd";
+      ctx.fillText(`L ${bandPeaks.low}%`, panelX + 8, panelY + 28);
+      ctx.fillStyle = "#facc15";
+      ctx.fillText(`M ${bandPeaks.mid}%`, panelX + 86, panelY + 28);
+      ctx.fillStyle = "#fb7185";
+      ctx.fillText(`H ${bandPeaks.high}%`, panelX + 168, panelY + 28);
+    }
+
     window.addEventListener("keydown", (event) => {
       if (event.code === "ArrowUp" || event.code === "Space") {
         triggerJump();
@@ -354,6 +396,9 @@
     let whistleLatched = false;
     let lastJumpAt = 0;
     let whistleAmplitude = 0;
+    let spectrogramValues = [];
+    let spectrogramPeakHz = 0;
+    let bandPeaks = { low: 0, mid: 0, high: 0 };
 
     async function startMicrophone(isAutoPrompt = false) {
       try {
@@ -391,10 +436,49 @@
       const sampleRate = audioContext.sampleRate;
       const hzPerBin = sampleRate / analyser.fftSize;
 
+      const spectroStartBin = Math.max(1, Math.floor(1000 / hzPerBin));
+      const spectroEndBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
       const startBin = Math.max(1, Math.floor(1800 / hzPerBin));
       const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
 
       let maxValue = 0;
+      let spectroMaxValue = 0;
+      let spectroMaxBin = spectroStartBin;
+      const bucketCount = 56;
+      spectrogramValues = new Array(bucketCount).fill(0);
+      const binsInRange = Math.max(1, spectroEndBin - spectroStartBin + 1);
+      const binStep = binsInRange / bucketCount;
+
+      let lowPeak = 0;
+      let midPeak = 0;
+      let highPeak = 0;
+
+      for (let bucket = 0; bucket < bucketCount; bucket++) {
+        const bucketStart = Math.floor(spectroStartBin + bucket * binStep);
+        const bucketEnd = Math.min(spectroEndBin, Math.floor(spectroStartBin + (bucket + 1) * binStep));
+        let bucketPeak = 0;
+        for (let i = bucketStart; i <= bucketEnd; i++) {
+          const value = bins[i];
+          if (value > bucketPeak) bucketPeak = value;
+          if (value > spectroMaxValue) {
+            spectroMaxValue = value;
+            spectroMaxBin = i;
+          }
+
+          const hz = i * hzPerBin;
+          if (hz < 2200) lowPeak = Math.max(lowPeak, value);
+          else if (hz < 3600) midPeak = Math.max(midPeak, value);
+          else highPeak = Math.max(highPeak, value);
+        }
+        spectrogramValues[bucket] = bucketPeak;
+      }
+
+      spectrogramPeakHz = spectroMaxBin * hzPerBin;
+      bandPeaks = {
+        low: Math.round((lowPeak / 255) * 100),
+        mid: Math.round((midPeak / 255) * 100),
+        high: Math.round((highPeak / 255) * 100),
+      };
       let sum = 0;
       const values = [];
 
