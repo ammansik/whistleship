@@ -354,9 +354,6 @@
     let whistleLatched = false;
     let lastJumpAt = 0;
     let whistleAmplitude = 0;
-    let rollingNoiseMedian = 1;
-    let rollingNoiseMax = 30;
-    let rollingNoiseMean = 4;
     let lastPeakHz = 0;
 
     async function startMicrophone(isAutoPrompt = false) {
@@ -398,64 +395,42 @@
       const startBin = Math.max(1, Math.floor(1800 / hzPerBin));
       const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
 
-      const lowBandStart = Math.max(1, Math.floor(200 / hzPerBin));
-      const lowBandEnd = Math.max(lowBandStart, Math.floor(1500 / hzPerBin));
-
       let maxValue = 0;
       let peakBin = startBin;
       let sum = 0;
-      let geoLogSum = 0;
-      let lowBandSum = 0;
       const values = [];
 
       for (let i = startBin; i <= endBin; i++) {
         const value = bins[i];
         values.push(value);
         sum += value;
-        geoLogSum += Math.log(Math.max(value, 1));
         if (value > maxValue) {
           maxValue = value;
           peakBin = i;
         }
       }
 
-      for (let i = lowBandStart; i <= lowBandEnd; i++) {
-        lowBandSum += bins[i];
-      }
-
       values.sort((a, b) => a - b);
       const median = values[Math.floor(values.length / 2)] || 1;
       const mean = sum / Math.max(values.length, 1);
       const peakHz = peakBin * hzPerBin;
-      const geometricMean = Math.exp(geoLogSum / Math.max(values.length, 1));
-      const spectralFlatness = geometricMean / Math.max(mean, 1);
-      const whistleBandRatio = sum / Math.max(lowBandSum, 1);
-
-      const clampedMaxForNoise = Math.min(maxValue, rollingNoiseMax * 1.08 + 4);
-      rollingNoiseMedian = rollingNoiseMedian * 0.98 + median * 0.02;
-      rollingNoiseMax = rollingNoiseMax * 0.98 + clampedMaxForNoise * 0.02;
-      rollingNoiseMean = rollingNoiseMean * 0.98 + mean * 0.02;
 
       const peakRatio = maxValue / Math.max(median, 1);
-      const dynamicAmpThreshold = Math.max(60, rollingNoiseMax * 1.35);
-      const dynamicMeanThreshold = Math.max(5, rollingNoiseMean * 1.25);
-      const dynamicRatioThreshold = Math.max(3.0, rollingNoiseMedian > 0 ? 3.2 : 3.0);
-      const dynamicBandRatio = Math.max(1.6, rollingNoiseMean > 10 ? 2.0 : 1.8);
-      const peakStable = lastPeakHz === 0 || Math.abs(peakHz - lastPeakHz) < 420;
-      const whistlePitch = peakHz >= 1900 && peakHz <= 4500;
-      const tonalEnough = spectralFlatness < 0.8;
-      const bandDominant = whistleBandRatio > dynamicBandRatio;
-      const loudEnough = maxValue > dynamicAmpThreshold && mean > dynamicMeanThreshold;
+      const loudEnough = maxValue > 90 && mean > 8;
+      const whistlePitch = peakHz >= 1800 && peakHz <= 5000;
+      const peakStable = lastPeakHz === 0 || Math.abs(peakHz - lastPeakHz) < 650;
       const whistleNow =
         loudEnough &&
-        peakRatio > dynamicRatioThreshold &&
+        peakRatio > 4.2 &&
         whistlePitch &&
-        peakStable &&
-        tonalEnough &&
-        bandDominant;
+        peakStable;
       const normalizedAmplitude = Math.min(1, maxValue / 255);
       whistleAmplitude = whistleAmplitude * 0.8 + normalizedAmplitude * 0.2;
-      lastPeakHz = peakHz;
+      if (whistleNow || loudEnough) {
+        lastPeakHz = lastPeakHz === 0 ? peakHz : lastPeakHz * 0.75 + peakHz * 0.25;
+      } else if (silenceFrames > 8) {
+        lastPeakHz = 0;
+      }
 
       if (whistleNow) {
         whistleFrames += 1;
@@ -465,7 +440,7 @@
         whistleFrames = 0;
       }
 
-      if (silenceFrames >= 4 || maxValue < dynamicAmpThreshold * 0.5) {
+      if (silenceFrames >= 4) {
         whistleLatched = false;
       }
 
