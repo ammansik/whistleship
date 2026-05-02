@@ -354,6 +354,7 @@
     let whistleLatched = false;
     let lastJumpAt = 0;
     let whistleAmplitude = 0;
+    let lastPeakHz = 0;
 
     async function startMicrophone(isAutoPrompt = false) {
       try {
@@ -395,6 +396,7 @@
       const endBin = Math.min(bins.length - 1, Math.floor(5000 / hzPerBin));
 
       let maxValue = 0;
+      let peakBin = startBin;
       let sum = 0;
       const values = [];
 
@@ -402,18 +404,33 @@
         const value = bins[i];
         values.push(value);
         sum += value;
-        if (value > maxValue) maxValue = value;
+        if (value > maxValue) {
+          maxValue = value;
+          peakBin = i;
+        }
       }
 
       values.sort((a, b) => a - b);
       const median = values[Math.floor(values.length / 2)] || 1;
       const mean = sum / Math.max(values.length, 1);
+      const peakHz = peakBin * hzPerBin;
 
       const peakRatio = maxValue / Math.max(median, 1);
       const loudEnough = maxValue > 90 && mean > 8;
-      const whistleNow = loudEnough && peakRatio > 4.2;
+      const whistlePitch = peakHz >= 1800 && peakHz <= 5000;
+      const peakStable = lastPeakHz === 0 || Math.abs(peakHz - lastPeakHz) < 650;
+      const whistleNow =
+        loudEnough &&
+        peakRatio > 4.2 &&
+        whistlePitch &&
+        peakStable;
       const normalizedAmplitude = Math.min(1, maxValue / 255);
       whistleAmplitude = whistleAmplitude * 0.8 + normalizedAmplitude * 0.2;
+      if (whistleNow || loudEnough) {
+        lastPeakHz = lastPeakHz === 0 ? peakHz : lastPeakHz * 0.75 + peakHz * 0.25;
+      } else if (silenceFrames > 8) {
+        lastPeakHz = 0;
+      }
 
       if (whistleNow) {
         whistleFrames += 1;
